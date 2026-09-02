@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { copyPhrase, deletePhrase, listGroups, listPhrases, upsertPhrase } from "./api";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { EditorPane } from "./components/EditorPane";
 import { PhraseList } from "./components/PhraseList";
 import { segmentsEqual } from "./lib/segments";
@@ -12,6 +13,7 @@ import {
 import "./App.css";
 
 const ALL_GROUP = "全部";
+const AUTOSAVE_MS = 700;
 
 function isDirty(draft: PhraseDraft, original: Phrase | null): boolean {
   if (!original) {
@@ -30,6 +32,16 @@ function isDirty(draft: PhraseDraft, original: Phrase | null): boolean {
   );
 }
 
+function mergeSavedPhrase(list: Phrase[], saved: Phrase): Phrase[] {
+  const index = list.findIndex((item) => item.id === saved.id);
+  if (index < 0) {
+    return [saved, ...list];
+  }
+  const next = [...list];
+  next[index] = saved;
+  return next;
+}
+
 export default function App(): ReactElement {
   const [phrases, setPhrases] = useState<Phrase[]>([]);
   const [groups, setGroups] = useState<string[]>(["默认"]);
@@ -39,6 +51,10 @@ export default function App(): ReactElement {
   const [draft, setDraft] = useState<PhraseDraft>(emptyDraft());
   const [status, setStatus] = useState("就绪");
   const [busy, setBusy] = useState(false);
+  const [focusNonce, setFocusNonce] = useState(0);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const original = useMemo(
     () => phrases.find((item) => item.id === draft.id) ?? null,
@@ -82,6 +98,25 @@ export default function App(): ReactElement {
     return window.confirm("当前常用语尚未保存，确定丢弃修改？");
   }, [dirty]);
 
+  const persistDraft = useCallback(async (current: PhraseDraft): Promise<Phrase> => {
+    const saved = await upsertPhrase({
+      id: current.id,
+      title: current.title,
+      groupName: current.groupName,
+      segments: current.segments,
+      pinned: current.pinned,
+    });
+    setPhrases((prev) => mergeSavedPhrase(prev, saved));
+    setGroups((prev) => (prev.includes(saved.groupName) ? prev : [...prev, saved.groupName]));
+    setSelectedId(saved.id);
+    setDraft((prev) => ({
+      ...prev,
+      id: saved.id,
+      title: prev.title.trim() === "" ? saved.title : prev.title,
+    }));
+    return saved;
+  }, []);
+
   const handleSelect = useCallback(
     (id: string) => {
       if (id === selectedId) {
@@ -100,33 +135,47 @@ export default function App(): ReactElement {
     [confirmIfDirty, phrases, selectedId],
   );
 
-  const handleNew = useCallback(() => {
+  const handleNew = useCallback(async () => {
     if (!confirmIfDirty()) {
       return;
     }
-    setSelectedId(null);
-    setDraft(emptyDraft(group === ALL_GROUP ? "默认" : group));
-    setStatus("已新建草稿");
-  }, [confirmIfDirty, group]);
-
-  const handleSave = useCallback(async () => {
     setBusy(true);
     try {
-      const saved = await upsertPhrase({
-        id: draft.id,
-        title: draft.title,
-        groupName: draft.groupName,
-        segments: draft.segments,
-        pinned: draft.pinned,
+      const created = await persistDraft({
+        ...emptyDraft(group === ALL_GROUP ? "默认" : group),
+        title: "",
       });
-      setStatus("已保存");
-      await refresh(saved.id);
+      setDraft(draftFromPhrase(created));
+      setFocusNonce((value) => value + 1);
+      setStatus("已新建，写入数据库，可以直接编辑");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
     }
-  }, [draft, refresh]);
+  }, [confirmIfDirty, group, persistDraft]);
+
+  const handleSave = useCallback(async () => {
+    setBusy(true);
+    try {
+      await persistDraft(draftRef.current);
+      setStatus("已保存");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [persistDraft]);
+
+  useEffect(() => {
+    if (!dirty || busy) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void handleSave();
+    }, AUTOSAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [busy, dirty, draft.groupName, draft.pinned, draft.segments, draft.title, handleSave]);
 
   const handleCopy = useCallback(async () => {
     if (!draft.id) {
@@ -140,13 +189,19 @@ export default function App(): ReactElement {
     }
   }, [draft.id]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDeleteRequest = useCallback(() => {
+    if (!draft.id || busy) {
+      return;
+    }
+    setDeleteOpen(true);
+  }, [busy, draft.id]);
+
+  const handleDeleteConfirm = useCallback(async () => {
     if (!draft.id) {
+      setDeleteOpen(false);
       return;
     }
-    if (!window.confirm("确定删除这条常用语？")) {
-      return;
-    }
+    setDeleteOpen(false);
     setBusy(true);
     try {
       await deletePhrase(draft.id);
@@ -169,7 +224,7 @@ export default function App(): ReactElement {
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        handleNew();
+        void handleNew();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -181,8 +236,11 @@ export default function App(): ReactElement {
       <aside className="sidebar">
         <div className="brand">
           <h1>常用语助手</h1>
-          <p>文本 + 图片混排</p>
+          <p>文本 + 图片混排，保存在本机数据库</p>
         </div>
+        <button type="button" className="btn btn-primary sidebar-new" onClick={() => void handleNew()}>
+          新建常用语
+        </button>
         <input
           className="search"
           value={query}
@@ -197,12 +255,19 @@ export default function App(): ReactElement {
             </option>
           ))}
         </select>
-        <PhraseList phrases={phrases} selectedId={selectedId} onSelect={handleSelect} />
+        <PhraseList
+          phrases={phrases}
+          selectedId={selectedId}
+          query={query}
+          onSelect={handleSelect}
+          onNew={() => void handleNew()}
+        />
       </aside>
       <EditorPane
         draft={draft}
         groups={groups}
         dirty={dirty}
+        focusNonce={focusNonce}
         onChange={setDraft}
         onSave={() => {
           void handleSave();
@@ -210,14 +275,25 @@ export default function App(): ReactElement {
         onCopy={() => {
           void handleCopy();
         }}
-        onDelete={() => {
-          void handleDelete();
+        onDelete={handleDeleteRequest}
+        onNew={() => {
+          void handleNew();
         }}
-        onNew={handleNew}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        title="删除常用语"
+        message={`确定删除「${draft.title || "未命名常用语"}」？这条会从数据库里去掉，不可恢复。`}
+        confirmLabel="删除"
+        danger
+        onConfirm={() => {
+          void handleDeleteConfirm();
+        }}
+        onCancel={() => setDeleteOpen(false)}
       />
       <footer className="status-bar">
         <span>{busy ? "处理中…" : status}</span>
-        <span>{dirty ? "未保存" : "已同步"}</span>
+        <span>{dirty ? "未保存（将自动保存）" : "已写入数据库"}</span>
       </footer>
     </div>
   );

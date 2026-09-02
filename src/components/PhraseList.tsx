@@ -5,12 +5,33 @@ import { MixedPreview } from "./MixedPreview";
 interface PhraseListProps {
   phrases: Phrase[];
   selectedId: string | null;
+  query: string;
   onSelect: (id: string) => void;
+  onNew: () => void;
 }
 
-export function PhraseList({ phrases, selectedId, onSelect }: PhraseListProps): ReactElement {
+export function PhraseList({
+  phrases,
+  selectedId,
+  query,
+  onSelect,
+  onNew,
+}: PhraseListProps): ReactElement {
   if (phrases.length === 0) {
-    return <div className="empty-list">没有匹配的常用语</div>;
+    return (
+      <div className="empty-list">
+        {query.trim() ? (
+          <p>没有匹配「{query}」的常用语</p>
+        ) : (
+          <>
+            <p>数据库里还没有常用语。</p>
+            <button type="button" className="btn" onClick={onNew}>
+              新建一条
+            </button>
+          </>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -27,7 +48,11 @@ export function PhraseList({ phrases, selectedId, onSelect }: PhraseListProps): 
             >
               <div className="phrase-row-head">
                 <strong>{phrase.title}</strong>
-                {phrase.pinned ? <span className="pin-dot" title="置顶">钉</span> : null}
+                {phrase.pinned ? (
+                  <span className="pin-dot" title="置顶">
+                    钉
+                  </span>
+                ) : null}
               </div>
               <MixedPreview segments={phrase.segments} />
             </button>

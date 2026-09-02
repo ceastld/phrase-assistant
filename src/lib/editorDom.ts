@@ -139,6 +139,9 @@ export function parseEditorDom(root: HTMLElement): PhraseSegment[] {
 
     const element = node as HTMLElement;
     if (isCaretAnchor(element)) {
+      for (const child of element.childNodes) {
+        walk(child);
+      }
       return;
     }
     if (element.dataset.phraseSegment === "image") {
@@ -174,6 +177,187 @@ export function parseEditorDom(root: HTMLElement): PhraseSegment[] {
 
 export function serializeEditorSegments(segments: readonly PhraseSegment[]): string {
   return serializeSegments(segments);
+}
+
+export function contentLength(segments: readonly PhraseSegment[]): number {
+  return segments.reduce((total, segment) => {
+    if (segment.kind === "image") {
+      return total + 1;
+    }
+    return total + (segment.text ?? "").length;
+  }, 0);
+}
+
+function rawOffsetForCleaned(raw: string, cleanedOffset: number): number {
+  let rawIndex = 0;
+  let cleanedSeen = 0;
+  while (rawIndex < raw.length && cleanedSeen < cleanedOffset) {
+    if (raw[rawIndex] !== EDITOR_ZWSP) {
+      cleanedSeen += 1;
+    }
+    rawIndex += 1;
+  }
+  return rawIndex;
+}
+
+export function readCaretOffset(root: HTMLElement): number {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) {
+    return contentLength(parseEditorDom(root));
+  }
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.startContainer)) {
+    return 0;
+  }
+
+  let count = 0;
+  let found = false;
+
+  const walk = (node: Node): void => {
+    if (found) {
+      return;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      const raw = node.textContent ?? "";
+      if (node === range.startContainer) {
+        count += raw.slice(0, range.startOffset).split(EDITOR_ZWSP).join("").length;
+        found = true;
+        return;
+      }
+      count += raw.split(EDITOR_ZWSP).join("").length;
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+    const element = node as HTMLElement;
+    if (element.dataset.phraseSegment === "image") {
+      if (element === range.startContainer || element.contains(range.startContainer)) {
+        found = true;
+        return;
+      }
+      count += 1;
+      return;
+    }
+    if (element.tagName === "BR") {
+      if (element === range.startContainer) {
+        found = true;
+        return;
+      }
+      count += 1;
+      return;
+    }
+    if (element === range.startContainer) {
+      const limit = Math.min(range.startOffset, element.childNodes.length);
+      for (let i = 0; i < limit; i += 1) {
+        walk(element.childNodes[i]);
+        if (found) {
+          return;
+        }
+      }
+      found = true;
+      return;
+    }
+    for (const child of element.childNodes) {
+      walk(child);
+      if (found) {
+        return;
+      }
+    }
+  };
+
+  walk(root);
+  return count;
+}
+
+export function placeCollapsedCaret(root: HTMLElement, offset: number): void {
+  const sel = window.getSelection();
+  if (!sel) {
+    return;
+  }
+  sel.removeAllRanges();
+
+  let remaining = Math.max(0, offset);
+  let placed = false;
+
+  const placeInText = (text: Text, local: number): void => {
+    const range = document.createRange();
+    range.setStart(text, Math.max(0, Math.min(local, text.data.length)));
+    range.collapse(true);
+    sel.addRange(range);
+    placed = true;
+  };
+
+  const walk = (node: Node): boolean => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node as Text;
+      const raw = text.data;
+      const cleaned = raw.split(EDITOR_ZWSP).join("");
+      if (cleaned.length === 0) {
+        if (remaining <= 0) {
+          placeInText(text, raw.length);
+          return true;
+        }
+        return false;
+      }
+      if (remaining <= cleaned.length) {
+        placeInText(text, rawOffsetForCleaned(raw, remaining));
+        return true;
+      }
+      remaining -= cleaned.length;
+      return false;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return false;
+    }
+    const element = node as HTMLElement;
+    if (element.dataset.phraseSegment === "image") {
+      if (remaining <= 0) {
+        const range = document.createRange();
+        const parent = element.parentNode ?? root;
+        const index = Array.from(parent.childNodes).indexOf(element);
+        range.setStart(parent, Math.max(0, index));
+        range.collapse(true);
+        sel.addRange(range);
+        placed = true;
+        return true;
+      }
+      remaining -= 1;
+      return false;
+    }
+    if (element.tagName === "BR") {
+      if (remaining <= 0) {
+        const range = document.createRange();
+        const parent = element.parentNode ?? root;
+        const index = Array.from(parent.childNodes).indexOf(element);
+        range.setStart(parent, index);
+        range.collapse(true);
+        sel.addRange(range);
+        placed = true;
+        return true;
+      }
+      remaining -= 1;
+      return false;
+    }
+    for (const child of element.childNodes) {
+      if (walk(child)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (!walk(root) && !placed) {
+    const range = document.createRange();
+    range.selectNodeContents(root);
+    range.collapse(false);
+    sel.addRange(range);
+  }
+
+  const live = window.getSelection();
+  if (live && live.rangeCount > 0 && !live.getRangeAt(0).collapsed) {
+    live.collapseToEnd();
+  }
 }
 
 function removeNeighborAnchors(atom: HTMLElement): void {

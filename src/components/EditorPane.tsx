@@ -8,6 +8,7 @@ interface EditorPaneProps {
   draft: PhraseDraft;
   groups: string[];
   dirty: boolean;
+  focusNonce: number;
   onChange: (next: PhraseDraft) => void;
   onSave: () => void;
   onCopy: () => void;
@@ -19,6 +20,7 @@ export function EditorPane({
   draft,
   groups,
   dirty,
+  focusNonce,
   onChange,
   onSave,
   onCopy,
@@ -31,7 +33,7 @@ export function EditorPane({
   return (
     <section className="editor-pane" aria-label="常用语编辑">
       <header className="editor-toolbar">
-        <button type="button" className="btn" onClick={onNew}>
+        <button type="button" className="btn" onClick={onNew} title="Ctrl+N，立刻写入数据库">
           新建
         </button>
         <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
@@ -74,7 +76,7 @@ export function EditorPane({
           <input
             value={draft.title}
             onChange={(event) => onChange({ ...draft, title: event.target.value })}
-            placeholder="留空则用正文首行"
+            placeholder="可留空，保存时用正文首行"
           />
         </label>
         <label>
@@ -103,6 +105,8 @@ export function EditorPane({
       <div ref={surfaceHostRef} className="editor-body">
         <MixedEditor
           segments={draft.segments}
+          historyKey={draft.id ?? ""}
+          focusNonce={focusNonce}
           onChange={(segments) => onChange({ ...draft, segments })}
         />
       </div>

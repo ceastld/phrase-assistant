@@ -62,6 +62,21 @@ select {
   font-size: 13px;
 }
 
+.sidebar-new {
+  width: 100%;
+}
+
+.empty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.empty-list p {
+  margin: 0;
+}
+
 .search,
 .group-select,
 .editor-meta input {
@@ -221,18 +236,24 @@ select {
   padding: 0 16px 16px;
 }
 
-.mixed-editor,
-.mixed-editor-surface {
-  height: 100%;
-}
-
 .mixed-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 100%;
+  min-height: 0;
+}
+
+.mixed-editor-history {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .mixed-editor-surface {
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px;
@@ -258,19 +279,59 @@ select {
   vertical-align: middle;
 }
 
-/* Real 1px box so WebView2 IME can locate the caret after inline images. */
+/* Min 1px box for IME caret after images; grows so typed text stays visible. */
 .mixed-caret-anchor {
-  display: inline-block;
-  width: 1px;
-  height: 1em;
-  overflow: hidden;
-  vertical-align: text-bottom;
+  display: inline;
+  min-width: 1px;
+  min-height: 1em;
 }
 
 .mixed-atom--missing {
   padding: 2px 6px;
   background: #f3e6d8;
   border-radius: 6px;
+}
+
+.btn-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff8f5;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(36, 31, 24, 0.28);
+}
+
+.dialog-card {
+  width: min(400px, calc(100% - 40px));
+  padding: 20px 20px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.dialog-card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.dialog-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .status-bar {
