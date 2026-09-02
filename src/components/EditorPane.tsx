@@ -2,7 +2,7 @@ import { useRef, type ReactElement } from "react";
 import type { PhraseDraft } from "../types";
 import { MixedEditor } from "./MixedEditor";
 import { hydrateSegments, persistImageFile, segmentImageSrc } from "../api";
-import { insertImageAtCaret, parseEditorDom } from "../lib/editorDom";
+import { insertImageFileAtCaret, parseEditorDom } from "../lib/editorDom";
 
 interface EditorPaneProps {
   draft: PhraseDraft;
@@ -60,9 +60,9 @@ export function EditorPane({
               return;
             }
             for (const file of files) {
-              const segment = await persistImageFile(file);
-              insertImageAtCaret(host, segment.imageId ?? "", segmentImageSrc(segment));
+              await insertImageFileAtCaret(host, file, persistImageFile, segmentImageSrc);
             }
+            host.focus();
             onChange({ ...draft, segments: hydrateSegments(parseEditorDom(host)) });
           }}
         />

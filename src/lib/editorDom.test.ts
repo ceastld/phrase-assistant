@@ -22,6 +22,7 @@ describe("editorDom", () => {
     const imageAtom = root.querySelector("[data-phrase-segment='image']");
     expect(imageAtom?.getAttribute("data-image-id")).toBe("abc.png");
     expect(root.querySelector("img")?.getAttribute("src")).toBe("asset://abc.png");
+    expect(imageAtom?.nextElementSibling?.getAttribute("data-caret-anchor")).toBe("1");
 
     expect(parseEditorDom(root)).toEqual([
       { kind: "text", text: "你好\n下一行" },

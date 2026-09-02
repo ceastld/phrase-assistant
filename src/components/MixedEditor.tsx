@@ -3,7 +3,7 @@ import type { PhraseSegment } from "../types";
 import { hydrateSegments, persistImageFile, segmentImageSrc } from "../api";
 import {
   deleteAdjacentImageAtom,
-  insertImageAtCaret,
+  insertImageFileAtCaret,
   parseEditorDom,
   populateEditorDom,
   serializeEditorSegments,
@@ -19,11 +19,19 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp)$/iu.test(file.name);
 }
 
+function isImeComposing(event: { nativeEvent: { isComposing?: boolean }; key?: string }): boolean {
+  return event.nativeEvent.isComposing === true || event.key === "Process";
+}
+
 export function MixedEditor({ segments, onChange, disabled = false }: MixedEditorProps): ReactElement {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const lastSerializedRef = useRef<string | null>(null);
+  const composingRef = useRef(false);
 
   useEffect(() => {
+    if (composingRef.current) {
+      return;
+    }
     const serialized = serializeEditorSegments(segments);
     if (serialized === lastSerializedRef.current) {
       return;
@@ -37,6 +45,9 @@ export function MixedEditor({ segments, onChange, disabled = false }: MixedEdito
   }, [segments]);
 
   const syncFromDom = useCallback(() => {
+    if (composingRef.current) {
+      return;
+    }
     const root = surfaceRef.current;
     if (!root) {
       return;
@@ -56,9 +67,9 @@ export function MixedEditor({ segments, onChange, disabled = false }: MixedEdito
         if (!isImageFile(file)) {
           continue;
         }
-        const segment = await persistImageFile(file);
-        insertImageAtCaret(root, segment.imageId ?? "", segmentImageSrc(segment));
+        await insertImageFileAtCaret(root, file, persistImageFile, segmentImageSrc);
       }
+      root.focus();
       syncFromDom();
     },
     [disabled, syncFromDom],
@@ -66,7 +77,10 @@ export function MixedEditor({ segments, onChange, disabled = false }: MixedEdito
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (disabled || (event.key !== "Backspace" && event.key !== "Delete")) {
+      if (disabled || isImeComposing(event) || composingRef.current) {
+        return;
+      }
+      if (event.key !== "Backspace" && event.key !== "Delete") {
         return;
       }
       const root = surfaceRef.current;
@@ -88,7 +102,7 @@ export function MixedEditor({ segments, onChange, disabled = false }: MixedEdito
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (disabled) {
+      if (disabled || composingRef.current) {
         return;
       }
       const files = Array.from(event.clipboardData.files).filter(isImageFile);
@@ -135,7 +149,19 @@ export function MixedEditor({ segments, onChange, disabled = false }: MixedEdito
         aria-multiline="true"
         aria-label="图文混排编辑区"
         data-placeholder="输入文字，或粘贴 / 拖入图片…"
-        onInput={syncFromDom}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          composingRef.current = false;
+          syncFromDom();
+        }}
+        onInput={(event) => {
+          if (isImeComposing(event) || composingRef.current) {
+            return;
+          }
+          syncFromDom();
+        }}
         onBlur={syncFromDom}
         onKeyDown={handleKeyDown}
         onPaste={(event) => {

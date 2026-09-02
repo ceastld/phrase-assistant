@@ -132,9 +132,15 @@ select {
 
 .mixed-preview-image,
 .mixed-atom-image {
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px rgba(36, 31, 24, 0.18),
+    0 1px 2px rgba(36, 31, 24, 0.05);
+}
+
+.mixed-preview-image {
   display: inline-block;
   vertical-align: middle;
-  border-radius: 6px;
   margin: 0 3px;
 }
 
@@ -245,6 +251,20 @@ select {
 .mixed-atom {
   display: inline-block;
   vertical-align: middle;
+}
+
+.mixed-atom-image {
+  display: block;
+  vertical-align: middle;
+}
+
+/* Real 1px box so WebView2 IME can locate the caret after inline images. */
+.mixed-caret-anchor {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: text-bottom;
 }
 
 .mixed-atom--missing {
