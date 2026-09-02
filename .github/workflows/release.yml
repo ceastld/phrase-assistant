@@ -3,8 +3,13 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Rebuild this existing tag (e.g. v0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,19 +18,82 @@ jobs:
   windows-nsis:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.event.inputs.tag }}") {
+            "${{ github.event.inputs.tag }}"
+          } else {
+            "${{ github.ref_name }}"
+          }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Tag must look like v1.2.3 (got: $tag)"
+          }
+          $version = $tag.Substring(1)
+          $prerelease = if ($version.Contains("-")) { "true" } else { "false" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+          Write-Host "Release $tag ($version)"
+
+      - name: Setup .NET (GitVersion)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v3.2.1
+        with:
+          versionSpec: "6.x"
+
+      - name: Calculate GitVersion
+        id: gitversion
+        continue-on-error: true
+        uses: gittools/actions/gitversion/execute@v3.2.1
+        with:
+          useConfigFile: true
+          configFilePath: GitVersion.yml
+
+      - name: Stamp app manifests
+        shell: pwsh
+        run: |
+          pwsh -File scripts/sync-version.ps1 -Version "${{ steps.version.outputs.version }}"
+          $gv = "${{ steps.gitversion.outputs.majorMinorPatch }}"
+          $tagMmp = ("${{ steps.version.outputs.version }}" -split "-", 2)[0]
+          if ($gv -and $gv -ne $tagMmp) {
+            Write-Host "Note: GitVersion MajorMinorPatch=$gv, tag=$tagMmp. Tag wins."
+          }
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
       - run: npm test
-      - uses: tauri-apps/tauri-action@v0
+      - run: npm run test:scripts
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build installer and publish GitHub Release
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 常用语助手 ${{ github.ref_name }}
-          releaseDraft: true
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: 常用语助手 ${{ steps.version.outputs.tag }}
+          releaseBody: |
+            安装包见下方 Assets。
+
+            - 版本：`${{ steps.version.outputs.version }}`
+            - GitVersion：`${{ steps.gitversion.outputs.fullSemVer || 'n/a' }}`
+          releaseDraft: false
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           args: --bundles nsis

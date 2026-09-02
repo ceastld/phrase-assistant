@@ -45,4 +45,37 @@ npm run tauri:build
 
 产物在 `src-tauri/target/release/bundle/nsis/`。
 
-打 tag `v*` 或手动触发 GitHub Actions 也会走同一套 NSIS 打包。
+## 发版
+
+版本源是 **Git tag**（`vMAJOR.MINOR.PATCH`）。[GitVersion](https://gitversion.net/)（`GitVersion.yml`，GitHub Flow）根据 tag 和 Conventional Commits 计算**建议的下一版**；真正上架的版本以 tag 为准。
+
+三个清单必须同号，由脚本写入：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`。
+
+### 推荐：本地打 tag 并推送
+
+```powershell
+# 预览下一版（不写文件、不打 tag）
+.\scripts\release.ps1 -DryRun
+
+# 按 GitVersion / 最新 tag 自动升一档，只打本地 tag
+.\scripts\release.ps1
+
+# 明确升 patch / minor / major，并推送（推 tag 即发 GitHub Release）
+.\scripts\release.ps1 -Bump patch -Push
+```
+
+等价手打：
+
+```powershell
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+```
+
+推送匹配 `v*.*.*` 的 tag 后，`.github/workflows/release.yml` 会：
+
+1. 用 tag 回写三个版本号
+2. 跑测试
+3. 打 Windows NSIS 包
+4. 创建并发布 GitHub Release（预发布号如 `v0.2.0-beta.1` 会标成 prerelease）
+
+重打已有 tag 的包：GitHub → Actions → Release → Run workflow，填 `v0.1.0`。

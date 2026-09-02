@@ -1,0 +1,8 @@
+# GitHub Flow: mainline is master/main. Tags vX.Y.Z are the release source of truth.
+# Conventional commits bump the *suggested* next version (used by scripts/release.ps1 -Bump auto).
+workflow: GitHubFlow/v1
+tag-prefix: "[vV]?"
+commit-message-incrementing: Enabled
+major-version-bump-message: '(?i)(^| )((breaking|major)(\(.*\))?:|\+semver:\s?(breaking|major))'
+minor-version-bump-message: '(?i)(^| )((feat|feature)(\(.*\))?:|\+semver:\s?(feat|feature|minor))'
+patch-version-bump-message: '(?i)(^| )((fix|perf)(\(.*\))?:|\+semver:\s?(fix|patch))'
